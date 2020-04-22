@@ -1,3 +1,3 @@
 @echo off
 
-python "C:\Users\Bloomberg\PycharmProjects\IMUAnalyser\Mission_Manager.py"
+python "C:\Users\Odin\Desktop\Quest_Manager\Quest_Manager.py"

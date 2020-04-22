@@ -5,12 +5,146 @@ gi.require_version("Gdk", "3.0")
 from gi.repository import Gtk, Gio, Gdk
 from gi.repository.GdkPixbuf import Pixbuf
 import re
+import pathlib
+import os
+import datetime
+import json
 
-class Data(object):
-    def __init__(self):
+###############################################
+# Check if /APPDATA/ROAMING/QuestManager folder has been created
+homedir = os.getenv('APPDATA')
+dir_default = os.path.join(homedir, 'QuestManager\\')
+dir_tmp = os.path.join(homedir, 'QuestManager\\', 'tmp\\')
+dir_quests = os.path.join(homedir, 'QuestManager\\', 'quests\\')
+pathlib.Path(dir_tmp).mkdir(parents=True, exist_ok=True) 
+pathlib.Path(dir_quests).mkdir(parents=True, exist_ok=True) 
+
+_selected_quest = ""
+quest_list = []
+
+class Quest():
+    def __init__(self, is_completed: bool, number: int, name: str, file: str, n_hist=0, n_dialog=0, last_modified=str(datetime.datetime.now()), h_textviews=[], world: str):
+        self.is_completed = is_completed
+        self.number = number
+        self.name = name
+        self.file = file
+        self.n_hist = n_hist
+        self.n_dialog = n_dialog
+        self.last_modified = last_modified
+        self.h_textviews = h_textviews
+        self.world = world
+
+    def add_hist(self):
+        self.n_hist = self.n_hist + 1
+
+
+    def get_hist(self):
+        return self.h_textviews
+
+class ImageButton(Gtk.EventBox):
+    def __init__(self, name, tbm, id):
+        super(Gtk.EventBox, self).__init__()
+
+        # Load the images for the button
+        pb_close = Pixbuf.new_from_file(
+        'C:\\Users\\Odin\\Desktop\\Quest_Manager\\icons\\icon16_x.png')
+        
+        self.button_image = Gtk.Image()
+        self.button_image.set_from_pixbuf(pb_close)
+
+        self.name = name
+        self.tbm = tbm
+        self.id = id
+
+        # Add the default image to the event box
+        self.add(self.button_image)
+
+        # Connect the signal listeners
+        self.connect('button-press-event', self.on_button_pressed)
+        self.connect('button-release-event', self.on_button_released)
+
+    def get(self):
+        return self
+
+    def update_image(self, image_widget):
+        self.remove(self.get_child())
+        self.add(image_widget)
+        self.button_pressed_image.show()
+
+    def on_button_pressed(self, widget, event):
+        print(self.id)
+        #self.update_image(self.button_pressed_image)
+
+    def on_button_released(self, widget, event):
+        self.tbm.tabs[self.id].destroy()
+        #self.update_image(self.button_image)
+
+class TreeViewData:
+    def __init__(self, is_completed, number, name, file, n_hist, n_dialog):
+        self.is_completed = is_completed
+        self.number = number
+        self.name = name
+        self.file = file
+        self.n_hist = n_hist
+        self.n_dialog = n_dialog
+
+class Tabs_Manager(Gtk.HBox):
+    def __init__(self, win):
+        Gtk.HBox.__init__(self)
+        self.override_background_color(Gtk.StateFlags.NORMAL, Gdk.RGBA(0, 0, 0, .25))
+        self.tabs = []
+        self.btns = []
+        self.textview = Gtk.TextView()
+
+        self.win = win
+    
+    def get_tab(self):
+        return self
+
+    def destroy_all(self):
+        for e in self.tabs:
+            e.destroy()
+
+    def add_tab(self, title):
+        evnt = Gtk.EventBox()
+        tab = Gtk.HBox()
+        tab.set_size_request(-1, 40)
+        evnt.add(tab)
+        evnt.set_name('abc')
+
+        print(title)
+
+        evnt.connect('button-release-event', self.on_button_released)
+
+        tab.override_background_color(Gtk.StateFlags.NORMAL, Gdk.RGBA(0, 0, 0, .25))
+        labl = Gtk.Label(title)
+        btn = ImageButton("a", self, len(self.tabs))
+        self.btns.append(btn)
+
+        tab.pack_start(labl, False, False, 10)
+        tab.pack_start(btn.get(), False, False, 10)
+        self.pack_start(evnt, False, False, 1)
+
+        self.tabs.append(evnt)
+
+        self.win.show_all()
+
+    def on_button_pressed(self, widget, event):
+        print()
+        #self.update_image(self.button_pressed_image)
+
+    def on_button_released(self, widget, event):
+        name = Gtk.Buildable.get_name(widget)
+        print(name)
+
+class Assistant(object):
+    def __init__(self, tbm, win):
         self.label_selected_file = Gtk.Label()
 
-        self.mission_name = ""
+        self.tbm = tbm
+        self.win = win
+
+        self._mission_name = ""
         self.selected_world = "Asgard"
         self.form_mission_name = ""
         self.assistant = Gtk.Assistant()
@@ -20,64 +154,92 @@ class Data(object):
         self.mission_name_entry = Gtk.Entry()
         self.mission_name_entry.set_placeholder_text("Nombre de la mision")
         self.mission_name_entry.set_max_length(50)
-        self.mission_name_entry.connect('changed', self.on_entry_changed)
-        
+        self.textview = Gtk.TextView()
+        self.textview.set_border_window_size(Gtk.TextWindowType.TEXT, 2)
+        self.buffer = self.textview.get_buffer()
+
         self.assistant.connect('cancel', self.on_close_cancel)
         self.assistant.connect('close', self.on_close_cancel)
         self.assistant.connect('apply', self.on_apply)
         self.assistant.connect('prepare', self.on_prepare)
 
-    @mission_name.setter
-    def mission_name(self, text):
-        self.mission_name = text
-        
     @property
     def mission_name(self):
-        return self.mission_name
-        
-        
+        return self._mission_name
+
+    @mission_name.setter
+    def mission_name(self, text):
+        self._mission_name = text
+
+    @property
+    def selected_quest(self):
+        global _selected_quest
+        return _selected_quest
+
+    @selected_quest.setter
+    def selected_quest(self, text):
+        global _selected_quest
+        _selected_quest = text
+         
     def on_close_cancel(self, assistant):
         assistant.destroy()
-        Gtk.main_quit()
 
     def on_apply(self, assistant):
-        # apply changes here; this is a fictional example so just do
-        # nothing here
-        pass
+        ################################
+        ### Create quest file
+        ################################
+
+        quest_file = os.path.join(homedir, 'QuestManager\\', 'quests\\', self.label_real_mission_name.get_text() + ".qst")
+
+        print('>>>>>' + selected_world)
+
+        new_quest = Quest(False, len(quest_list) + 1, self.mission_name_entry.get_text(), quest_file, selected_world)
+
+        with open(quest_file, 'w') as q:
+            json.dump(new_quest.__dict__, q)
+
+        quest_list.append(new_quest)
+
+        self.win.add_treeview_entry(new_quest)
+        self.tbm.add_tab(self.mission_name_entry.get_text())
 
     def on_prepare(self, assistant, page):
         current_page = assistant.get_current_page()
         n_pages = assistant.get_n_pages()
         title = 'Sample assistant (%d of %d)' % (current_page + 1, n_pages)
         assistant.set_title(title)
+
+def on_entry_changed(widget, data, win):
+    global _mission_name
+    page_number = data.assistant.get_current_page()
+    current_page = data.assistant.get_nth_page(page_number)
+    text = data.mission_name_entry.get_text()
+    mission_name = text
+    text = re.sub(' ', '_', text) 
+    text = re.sub(r'[^\w]', '', text)
+    widget.set_text(text)
+    form_mission_name = text
+    data.buffer.delete(data.buffer.get_start_iter(), data.buffer.get_end_iter())
+
+    if mission_name:
+        data.assistant.set_page_complete(current_page, True)
+        data.label_real_mission_name.set_markup("<span style='italic'>M_{:03d}_<b>{}-{}</b></span>".format(len(quest_list) + 1, selected_world, text))
+        data.label_real_mission_name.show()
         
-    def on_entry_changed(self, widget):
-        page_number = self.assistant.get_current_page()
-        current_page = self.assistant.get_nth_page(page_number)
-        text = self.mission_name_entry.get_text()
-        self.meep(text)
-        text = re.sub(' ', '_', text) 
-        text = re.sub(r'[^\w]', '', text)
-        form_mission_name = text
-        
-        if self.get():
-            self.assistant.set_page_complete(current_page, True)
-            self.label_real_mission_name.set_markup("<span style='italic'>M_{:03d}_<b>{}-{}</b></span>".format(1, selected_world, self.get()))
-            self.label_real_mission_name.show()
-        else:
-            self.assistant.set_page_complete(current_page, False)
-            self.label_real_mission_name.hide()
-    
-def do_assistant():
-    dat = Data()
-    
+        markup = """> NOMBRE QUEST     = <b>{}</b>\n> FORMATO               = <span style='italic'>M_{:03d}_<b>{}-{}</b></span>\n> QUEST ANTERIOR   = <b>{}</b>\n> MAPA                      = <b>{}</b>""".format(text, len(quest_list) + 1, selected_world, text, data.selected_quest, selected_world)
+        data.buffer.insert_markup(data.buffer.get_end_iter(), markup, -1)
+    else:
+        data.assistant.set_page_complete(current_page, False)
+        data.label_real_mission_name.hide()
+ 
+def do_assistant(tbm, win):
+    dat = Assistant(tbm, win)
     dat.assistant.set_default_size(-1, 300)
     
-    dat.label_selected_file.connect("activate-link", activate_link)
+    dat.label_selected_file.connect("activate-link", activate_link, dat, win)
     
     create_page1(dat)
-    create_page2(dat)
-    create_page3(dat)
+    create_page2(dat, win)
 
     dat.assistant.show()
         
@@ -91,10 +253,15 @@ def on_toggle_changed(widget, data):
     else:
         data.assistant.set_page_complete(current_page, False)
         
-def activate_link(label, uri):
+def activate_link(label, uri, data, win):
     if uri == 'keynav':
-        label_selected_file.hide()
-        label_selected_file.set_text("")
+        data.label_selected_file.hide()
+        data.label_selected_file.set_text("")
+        data.selected_quest = ""
+
+        data.buffer.delete(data.buffer.get_start_iter(), data.buffer.get_end_iter())
+        markup = """> NOMBRE QUEST     = <b>{}</b>\n> FORMATO               = <span style='italic'>M_{:03d}_<b>{}-{}</b></span>\n> QUEST ANTERIOR   = <b>{}</b>\n> MAPA                      = <b>{}</b>""".format(data.mission_name_entry.get_text(), len(quest_list) + 1, selected_world, data.mission_name_entry.get_text(), data.selected_quest, selected_world)
+        data.buffer.insert_markup(data.buffer.get_end_iter(), markup, -1)
 
 def create_page1(data):
     box = Gtk.Box()
@@ -106,7 +273,7 @@ def create_page1(data):
     btn_mission_selec.connect('toggled', on_toggle_changed, data)
     img_mission = Gtk.Image()
     pb_text = Pixbuf.new_from_file(
-        'C:\\Users\\Bloomberg\\PycharmProjects\\IMUAnalyser\\icons\\icon32_text.png')
+        'C:\\Users\\Odin\\Desktop\\Quest_Manager\\icons\\icon32_text.png')
 
     lb = Gtk.Label("Quest")
     ico = Gtk.Image()
@@ -135,7 +302,7 @@ def create_page1(data):
 
     data.assistant.set_page_header_image(box, pixbuf)
 
-def create_page2(data):
+def create_page2(data, win):
     box = Gtk.VBox(homogeneous=False,
                    spacing=12)
     box.set_border_width(12)
@@ -145,15 +312,17 @@ def create_page2(data):
     
     box_worldchooser = Gtk.HBox()
     box_worldchooser.set_spacing(180)
-    
+
+    data.mission_name_entry.connect('changed', on_entry_changed, data, win)
+
     button_selec_file = Gtk.Button("Seleccionar Archivo")
-    button_selec_file.connect("clicked", on_file_clicked)
+    button_selec_file.connect("clicked", on_file_clicked_assis, data)
     
     box_btn_files = Gtk.HBox()
     box_btn_files.pack_start(button_selec_file, False, False, 5)
     
     av = Gtk.Label()
-    av.set_markup("(Opcional) Quest Anterior <span style='italic'>(*.msn)</span>")
+    av.set_markup("(Opcional) Quest Anterior <span style='italic'>(*.qst)</span>")
     
     box_filechooser.pack_start(av, False, True, 0)
     box_filechooser.pack_end(box_btn_files, True, False, 0)
@@ -169,7 +338,7 @@ def create_page2(data):
         world_store.append([world])
 
     world_combo = Gtk.ComboBox.new_with_model(world_store)
-    world_combo.connect("changed", on_combo_changed, data.mission_name_entry, data.label_real_mission_name)
+    world_combo.connect("changed", on_combo_changed, data.mission_name_entry, data.label_real_mission_name, data, win)
     renderer_text = Gtk.CellRendererText()
     world_combo.pack_start(renderer_text, True)
     world_combo.add_attribute(renderer_text, "text", 0)
@@ -203,28 +372,20 @@ def create_page2(data):
                                         Gtk.IconSize.DIALOG,
                                         None)
     data.assistant.set_page_header_image(box, pixbuf)
+    create_page3(data, data.mission_name_entry)
    
 
-def create_page3(data):
+def create_page3(data, ent):
     box = Gtk.VBox(homogeneous=False,
                    spacing=12)
     box.set_border_width(0)
     
-    label = Gtk.Label(mission_name)
-    
-    textview = Gtk.TextView()
-    textview.set_border_window_size(Gtk.TextWindowType.TEXT, 2)
-    buffer = textview.get_buffer()
+    label = Gtk.Label("Confirme los siguientes datos")
     
     print(data.mission_name_entry.get_text())
-    print(data.get())
-    
-    markup = "<span>NOMBRE MISION   = <b>{}</b></span>".format(data.mission_name_entry.get_text())
-    
-    buffer.insert_markup(buffer.get_end_iter(), markup, -1)
     
     box.pack_start(label, False, False, 0)
-    box.pack_start(textview, False, False, 0)
+    box.pack_start(data.textview, False, False, 0)
     box.show_all()
     
     data.assistant.append_page(box)
@@ -237,7 +398,7 @@ def create_page3(data):
                                         None)
     data.assistant.set_page_header_image(box, pixbuf)
 
-def on_combo_changed(combo, widget, widgetd):
+def on_combo_changed(combo, widget, widgetd, data, win):
     global selected_world
     tree_iter = combo.get_active_iter()
     if tree_iter is not None:
@@ -259,19 +420,21 @@ def on_combo_changed(combo, widget, widgetd):
     text = re.sub(' ', '_', text) 
     text = re.sub(r'[^\w]', '', text)
     form_mission_name = text
+    data.buffer.delete(data.buffer.get_start_iter(), data.buffer.get_end_iter())
     
     if text:
-        widgetd.set_markup("<span style='italic'>M_{:03d}_<b>{}-{}</b></span>".format(1, selected_world, text))
+        widgetd.set_markup("<span style='italic'>M_{:03d}_<b>{}-{}</b></span>".format(len(quest_list) + 1, selected_world, text))
+        markup = """> NOMBRE QUEST     = <b>{}</b>\n> FORMATO               = <span style='italic'>M_{:03d}_<b>{}-{}</b></span>\n> QUEST ANTERIOR   = <b>{}</b>\n> MAPA                      = <b>{}</b>""".format(text, len(quest_list) + 1, selected_world, text, data.selected_quest, selected_world)
+        data.buffer.insert_markup(data.buffer.get_end_iter(), markup, -1)
         widgetd.show()
     else:
         widgetd.hide()
         entry = combo.get_child()
 
-def on_file_clicked( widget):
-    global assistant
+def on_file_clicked_assis(widget, data):
     dialog = Gtk.FileChooserDialog(
         "Please choose a file",
-        assistant,
+        data.assistant,
         Gtk.FileChooserAction.OPEN,
         (
             Gtk.STOCK_CANCEL,
@@ -287,36 +450,72 @@ def on_file_clicked( widget):
     if response == Gtk.ResponseType.OK:
         print("Open clicked")
         print("File selected: " + dialog.get_filename())
-        label_selected_file.set_markup("<span style='italic'>{} <a href='keynav'>remover</a></span>".format(dialog.get_filename()))
-        label_selected_file.show()
+        data.label_selected_file.set_markup("<span style='italic'>{} <a href='keynav'>remover</a></span>".format(dialog.get_filename()))
+        data.label_selected_file.show()
+        data.selected_quest = str(dialog.get_filename())
+        
+        data.buffer.delete(data.buffer.get_start_iter(), data.buffer.get_end_iter())
+        markup = """> NOMBRE QUEST     = <b>{}</b>\n> FORMATO               = <span style='italic'>M_{:03d}_<b>{}-{}</b></span>\n> QUEST ANTERIOR   = <b>{}</b>\n> MAPA                      = <b>{}</b>""".format(data.mission_name_entry.get_text(), 1, selected_world, data.mission_name_entry.get_text(), data.selected_quest, selected_world)
+        data.buffer.insert_markup(data.buffer.get_end_iter(), markup, -1)
     elif response == Gtk.ResponseType.CANCEL:
         print("Cancel clicked")
-        label_selected_file.set_text("")
-        label_selected_file.hide()
+        data.label_selected_file.set_text("")
+        data.label_selected_file.hide()
+        data.selected_quest = ""
+
+        data.buffer.delete(data.buffer.get_start_iter(), data.buffer.get_end_iter())
+        markup = """> NOMBRE QUEST     = <b>{}</b>\n> FORMATO               = <span style='italic'>M_{:03d}_<b>{}-{}</b></span>\n> QUEST ANTERIOR   = <b>{}</b>\n> MAPA                      = <b>{}</b>""".format(data.mission_name_entry.get_text(), 1, selected_world, data.mission_name_entry.get_text(), data.selected_quest, selected_world)
+        data.buffer.insert_markup(data.buffer.get_end_iter(), markup, -1)
 
     dialog.destroy()
 
 def add_filters(dialog):
     filter_text = Gtk.FileFilter()
     filter_text.set_name("Quest Files")
-    filter_text.add_pattern("*.msn")
+    filter_text.add_pattern("*.qst")
     dialog.add_filter(filter_text)
 
 class HeaderBarWindow(Gtk.Window):
+    (COLUMN_FIXED,
+     COLUMN_DESCRIPTION,
+     COLUMN_DESCRIPTION,
+     COLUMN_NUMBER,
+     COLUMN_NUMBER) = range(5)
     def __init__(self):
-        Gtk.Window.__init__(self, title="Quest Manager")
-
+        Gtk.Window.__init__(self, title=" Manager")
+        self.set_position(Gtk.WindowPosition.CENTER_ALWAYS)
         s = Gdk.Screen.get_default()
         height = s.get_height() / 1.2
 
         self.set_border_width(1)
         self.set_default_size(720, height)
 
+        self.tabs = Tabs_Manager(self)
+
+        self.theme_dark = True
+
+        ##############################################
+        # Scan quest folder
+        
+        for file in os.listdir(dir_quests):
+            if file.endswith(".qst"):
+                with open(os.path.join(dir_quests, file), 'r') as f:
+                    quest_dict = json.load(f)
+                    quest_list.append(Quest(quest_dict['is_completed'], quest_dict['number'], quest_dict['name'], quest_dict['file'], quest_dict['n_hist'], quest_dict['n_dialog'], quest_dict['last_modified'], quest_dict['h_textviews']))
+
+        settings = Gtk.Settings.get_default()
+        settings.set_property("gtk-application-prefer-dark-theme", self.theme_dark)  # if you want use dark theme, set second arg to True
+
+
         self.treeview = None
-        self.store = Gtk.ListStore(str, int, int)
+        
+        self.store = Gtk.ListStore(bool, int, str, int, int, str)
 
         self.vpaned = Gtk.Paned(orientation=Gtk.Orientation(1))
         self.matplotlib_canvas = None
+
+        self.textview = Gtk.TextView()
+        self.buffer = self.textview.get_buffer()
 
         hb = Gtk.HeaderBar()
         hb.set_show_close_button(True)
@@ -324,10 +523,11 @@ class HeaderBarWindow(Gtk.Window):
         self.set_titlebar(hb)
 
         button = Gtk.Button()
-        icon = Gio.ThemedIcon(name="mail-send-receive-symbolic")
+        icon = Gio.ThemedIcon(name="video-display-symbolic")
         image = Gtk.Image.new_from_gicon(icon, Gtk.IconSize.BUTTON)
         button.add(image)
         hb.pack_end(button)
+        button.connect("clicked", self.toggle_theme)
 
         box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
         Gtk.StyleContext.add_class(box.get_style_context(), "linked")
@@ -347,7 +547,6 @@ class HeaderBarWindow(Gtk.Window):
 
         # create a toolbar
         toolbar = self._create_toolbar()
-
         # create the main content
         main_content = self._create_main_content()
 
@@ -355,11 +554,17 @@ class HeaderBarWindow(Gtk.Window):
         self.layout = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.layout.pack_start(menubar, False, False, 0)
         self.layout.pack_start(toolbar, False, False, 0)
-        self.layout.pack_start(main_content, True, True, 0)
+        self.layout.pack_start(self.tabs.get_tab(), False, False, 0)
+        self.layout.pack_start(main_content, False, True, 0)
         self.add(self.layout)
 
         self.connect('destroy', Gtk.main_quit)
         self.show_all()
+    
+    def toggle_theme(self, widget):
+        settings = Gtk.Settings.get_default()
+        settings.set_property("gtk-application-prefer-dark-theme", (not self.theme_dark))  # if you want use dark theme, set second arg to True
+        self.theme_dark = not self.theme_dark
 
     def _create_menubar(self):
         # menu item 'Bar'
@@ -395,15 +600,15 @@ class HeaderBarWindow(Gtk.Window):
         # button with icon
 
         pb_new = Pixbuf.new_from_file(
-            'C:\\Users\\Bloomberg\\PycharmProjects\\IMUAnalyser\\icons\\icon16_new.png')
+            'C:\\Users\\Odin\\Desktop\\Quest_Manager\\icons\\icon16_new.png')
         pb_import = Pixbuf.new_from_file(
-            'C:\\Users\\Bloomberg\\PycharmProjects\\IMUAnalyser\\icons\\icon16_filesel.png')
+            'C:\\Users\\Odin\\Desktop\\Quest_Manager\\icons\\icon16_filesel.png')
         pb_export = Pixbuf.new_from_file(
-            'C:\\Users\\Bloomberg\\PycharmProjects\\IMUAnalyser\\icons\\icon16_export.png')
+            'C:\\Users\\Odin\\Desktop\\Quest_Manager\\icons\\icon16_export.png')
         pb_record = Pixbuf.new_from_file(
-            'C:\\Users\\Bloomberg\\PycharmProjects\\IMUAnalyser\\icons\\icon16_render_animation.png')
+            'C:\\Users\\Odin\\Desktop\\Quest_Manager\\icons\\icon16_render_animation.png')
         pb_stop_record = Pixbuf.new_from_file(
-            'C:\\Users\\Bloomberg\\PycharmProjects\\IMUAnalyser\\icons\\icon16_rec.png')
+            'C:\\Users\\Odin\\Desktop\\Quest_Manager\\icons\\icon16_rec.png')
 
         boc = Gtk.Box()
         lb = Gtk.Label("Nuevo")
@@ -473,6 +678,7 @@ class HeaderBarWindow(Gtk.Window):
         toolbar.insert(bar_item, -1)
         return toolbar
 
+
     def on_file_clicked(self, widget):
         dialog = Gtk.FileChooserDialog(
             "Please choose a file",
@@ -496,7 +702,7 @@ class HeaderBarWindow(Gtk.Window):
             print("Cancel clicked")
     
     def new_file_click(self, widget):
-        do_assistant()
+        do_assistant(self.tabs, self)
         
         
 
@@ -523,8 +729,10 @@ class HeaderBarWindow(Gtk.Window):
 
         dialog.destroy()
 
-    def add_csv(self, csv_file):
-        self.store.append([csv_file, 1, 20])
+    def add_treeview_entry(self, quest):
+        print('completed: {}\nnumber: {}\nname: {}\nn_hist: {}\nn_dialog: {}\nfile: {}\n'.format(quest.is_completed, quest.number, quest.name, quest.n_hist, quest.n_dialog, quest.file))
+        self.store.append([quest.is_completed, quest.number, quest.name, quest.n_hist, quest.n_dialog, quest.file])
+        self.show_all()
 
     def _create_main_content(self):
         ###################################################################
@@ -536,15 +744,42 @@ class HeaderBarWindow(Gtk.Window):
         self.grid.set_column_homogeneous(True)
         self.grid.set_row_homogeneous(True)
 
-        self.treeview = Gtk.TreeView(self.store)
+        self.treeview = Gtk.TreeView(model=self.store)
         self.treeview.connect('cursor-changed', self.selection_changed)
 
         for i, column_title in enumerate(
-                ["File", "Number of Samples", "Estimated Duration (s)"]
+                ["Completa", "Numero", "Nombre", "Cant. Historias", "Cant. Dialogos", "Archivo"]
         ):
-            renderer = Gtk.CellRendererText()
-            column = Gtk.TreeViewColumn(column_title, renderer, text=i)
+            if i == 0:
+                renderer = Gtk.CellRendererToggle()
+                renderer.connect('toggled', self.is_fixed_toggled, self.store)
+
+                column = Gtk.TreeViewColumn(column_title, renderer, active=self.COLUMN_FIXED)
+                column.set_min_width(50)
+                column.set_sizing(Gtk.TreeViewColumnSizing.AUTOSIZE)
+                column.set_resizable(True)
+                column.set_reorderable(True)
+            elif i == 2:
+                renderer = Gtk.CellRendererText()
+                renderer.set_property("editable", True)
+                column = Gtk.TreeViewColumn(column_title, renderer, text=i, active=self.COLUMN_FIXED)
+                column.set_min_width(50)
+                column.set_sizing(Gtk.TreeViewColumnSizing.AUTOSIZE)
+                column.set_resizable(True)
+                column.set_reorderable(True)
+            else:
+                renderer = Gtk.CellRendererText()
+                column = Gtk.TreeViewColumn(column_title, renderer, text=i, active=self.COLUMN_FIXED)
+                column.set_min_width(50)
+                column.set_sizing(Gtk.TreeViewColumnSizing.AUTOSIZE)
+                column.set_resizable(True)
+                column.set_reorderable(True)
+            
             self.treeview.append_column(column)
+        
+        for quest in quest_list:
+            self.add_treeview_entry(quest)
+
 
         # setting up the layout, putting the treeview in a scrollwindow, and the buttons in a row
         self.scrollable_treelist = Gtk.ScrolledWindow()
@@ -561,7 +796,26 @@ class HeaderBarWindow(Gtk.Window):
         self.vpaned.pack1(self.grid, False, False)
         #self.vpaned.pack2(canvas, True, True)
 
-        return self.vpaned
+        gride = Gtk.Grid()
+
+        stack = Gtk.Stack()
+        stack.set_hhomogeneous(True)
+        stack.set_transition_type(Gtk.StackTransitionType.SLIDE_UP)
+
+        stack.set_hexpand(True)
+        stack.set_vexpand(True)
+        gride.attach(stack, 1, 0, 1, 1)
+
+        stacksidebar = Gtk.StackSidebar()
+        stacksidebar.set_stack(stack)
+        gride.attach(stacksidebar, 0, 0, 1, 1)
+
+        stack.add_titled(self.vpaned, 'quest', 'Lista de Quest                               ')
+        stack.add_titled(Gtk.Label(), 'story', 'Historia General')
+        stack.add_titled(Gtk.Label(), 'dialogue', 'Dialogos')
+        stack.add_titled(Gtk.Label(), 'cutscene', 'Cut-Scenes')
+
+        return gride
 
 
     def language_filter_func(self, model, iter, data):
@@ -586,10 +840,24 @@ class HeaderBarWindow(Gtk.Window):
         (model, iter) = treeview.get_selection().get_selected()
         #self.plot_csv(model[iter][0])
 
+    def is_fixed_toggled(self, cell, path_str, model):
+        # get toggled iter
+        iter_ = model.get_iter(path_str)
+        is_fixed = model.get_value(iter_, self.COLUMN_FIXED)
+
+        # do something with value
+        is_fixed ^= 1
+
+        model.set_value(iter_, self.COLUMN_FIXED, is_fixed)
+
+        qst = quest_list[int(path_str)]
+        qst.is_completed = bool(is_fixed)
+
+        with open(qst.file, 'w') as q:
+            json.dump(qst.__dict__, q)
 
 
 win = HeaderBarWindow()
-win.set_position(Gtk.WindowPosition.CENTER)
 win.connect("destroy", Gtk.main_quit)
 win.show_all()
 Gtk.main()
