@@ -9,6 +9,7 @@ import pathlib
 import os
 import datetime
 import json
+import string 
 
 ###############################################
 # Check if /APPDATA/ROAMING/QuestManager folder has been created
@@ -23,16 +24,16 @@ _selected_quest = ""
 quest_list = []
 
 class Quest():
-    def __init__(self, is_completed: bool, number: int, name: str, file: str, n_hist=0, n_dialog=0, last_modified=str(datetime.datetime.now()), h_textviews=[], world: str):
+    def __init__(self, is_completed: bool, number: int, name: str, file: str, world: str, n_hist=0, n_dialog=0, last_modified=str(datetime.datetime.now()), h_textviews=[]):
         self.is_completed = is_completed
         self.number = number
         self.name = name
         self.file = file
+        self.world = world
         self.n_hist = n_hist
         self.n_dialog = n_dialog
         self.last_modified = last_modified
         self.h_textviews = h_textviews
-        self.world = world
 
     def add_hist(self):
         self.n_hist = self.n_hist + 1
@@ -47,7 +48,7 @@ class ImageButton(Gtk.EventBox):
 
         # Load the images for the button
         pb_close = Pixbuf.new_from_file(
-        'C:\\Users\\Odin\\Desktop\\Quest_Manager\\icons\\icon16_x.png')
+        '.\\icons\\icon16_x.png')
         
         self.button_image = Gtk.Image()
         self.button_image.set_from_pixbuf(pb_close)
@@ -72,27 +73,19 @@ class ImageButton(Gtk.EventBox):
         self.button_pressed_image.show()
 
     def on_button_pressed(self, widget, event):
-        print(self.id)
+        #print(self.id)
         #self.update_image(self.button_pressed_image)
+        pass
 
     def on_button_released(self, widget, event):
-        self.tbm.tabs[self.id].destroy()
-        #self.update_image(self.button_image)
-
-class TreeViewData:
-    def __init__(self, is_completed, number, name, file, n_hist, n_dialog):
-        self.is_completed = is_completed
-        self.number = number
-        self.name = name
-        self.file = file
-        self.n_hist = n_hist
-        self.n_dialog = n_dialog
+        self.tbm.remove_tab(self.name)
 
 class Tabs_Manager(Gtk.HBox):
     def __init__(self, win):
         Gtk.HBox.__init__(self)
         self.override_background_color(Gtk.StateFlags.NORMAL, Gdk.RGBA(0, 0, 0, .25))
         self.tabs = []
+        self.tabs_titles = []
         self.btns = []
         self.textview = Gtk.TextView()
 
@@ -104,38 +97,60 @@ class Tabs_Manager(Gtk.HBox):
     def destroy_all(self):
         for e in self.tabs:
             e.destroy()
+    
+    def remove_tab(self, title):
+        print('tab {} will be removed'.format(title))
+        print("{}\n{}".format(self.tabs, self.tabs_titles))
+        for tab in self.tabs:
+            if tab.get_css_name() == title:
+                self.tabs.remove(tab)
+                tab.destroy()
+                
+        for tab_title in self.tabs_titles:
+            if tab_title == title:
+                self.tabs_titles.remove(title)
 
     def add_tab(self, title):
-        evnt = Gtk.EventBox()
-        tab = Gtk.HBox()
-        tab.set_size_request(-1, 40)
-        evnt.add(tab)
-        evnt.set_name('abc')
-
-        print(title)
-
-        evnt.connect('button-release-event', self.on_button_released)
-
-        tab.override_background_color(Gtk.StateFlags.NORMAL, Gdk.RGBA(0, 0, 0, .25))
-        labl = Gtk.Label(title)
-        btn = ImageButton("a", self, len(self.tabs))
-        self.btns.append(btn)
-
-        tab.pack_start(labl, False, False, 10)
-        tab.pack_start(btn.get(), False, False, 10)
-        self.pack_start(evnt, False, False, 1)
-
-        self.tabs.append(evnt)
-
-        self.win.show_all()
+        if title not in self.tabs_titles:
+            evnt = Gtk.EventBox()
+            tab = Gtk.HBox()
+            tab.set_size_request(-1, 40)
+            evnt.add(tab)
+            evnt.set_css_name(title)
+    
+            evnt.connect('button-release-event', self.on_button_released)
+    
+            tab.override_background_color(Gtk.StateFlags.NORMAL, Gdk.RGBA(0, 0, 0, .25))
+            labl = Gtk.Label(title)
+            btn = ImageButton(title, self, len(self.tabs))
+            btn.set_css_name(title)
+            self.btns.append(btn)
+    
+            tab.pack_start(labl, False, False, 10)
+            tab.pack_start(btn.get(), False, False, 10)
+            self.pack_start(evnt, False, False, 1)
+    
+            self.tabs.append(evnt)
+            self.tabs_titles.append(title)
+    
+            self.win.show_all()
+        else:
+            self.select_tab(title)   
+    
+    def select_tab(self, title):
+        for tab in self.tabs:
+            if tab.get_css_name() == title:
+                box = tab.get_children()[0]
+    
+    def open_tab(self, name):
+        pass
 
     def on_button_pressed(self, widget, event):
-        print()
+        pass
         #self.update_image(self.button_pressed_image)
 
     def on_button_released(self, widget, event):
-        name = Gtk.Buildable.get_name(widget)
-        print(name)
+        pass
 
 class Assistant(object):
     def __init__(self, tbm, win):
@@ -273,7 +288,7 @@ def create_page1(data):
     btn_mission_selec.connect('toggled', on_toggle_changed, data)
     img_mission = Gtk.Image()
     pb_text = Pixbuf.new_from_file(
-        'C:\\Users\\Odin\\Desktop\\Quest_Manager\\icons\\icon32_text.png')
+        '.\\icons\\icon32_text.png')
 
     lb = Gtk.Label("Quest")
     ico = Gtk.Image()
@@ -501,7 +516,7 @@ class HeaderBarWindow(Gtk.Window):
             if file.endswith(".qst"):
                 with open(os.path.join(dir_quests, file), 'r') as f:
                     quest_dict = json.load(f)
-                    quest_list.append(Quest(quest_dict['is_completed'], quest_dict['number'], quest_dict['name'], quest_dict['file'], quest_dict['n_hist'], quest_dict['n_dialog'], quest_dict['last_modified'], quest_dict['h_textviews']))
+                    quest_list.append(Quest(quest_dict['is_completed'], quest_dict['number'], quest_dict['name'], quest_dict['file'], quest_dict['world'], quest_dict['n_hist'], quest_dict['n_dialog'], quest_dict['last_modified'], quest_dict['h_textviews']))
 
         settings = Gtk.Settings.get_default()
         settings.set_property("gtk-application-prefer-dark-theme", self.theme_dark)  # if you want use dark theme, set second arg to True
@@ -600,15 +615,15 @@ class HeaderBarWindow(Gtk.Window):
         # button with icon
 
         pb_new = Pixbuf.new_from_file(
-            'C:\\Users\\Odin\\Desktop\\Quest_Manager\\icons\\icon16_new.png')
+            '.\\icons\\icon16_new.png')
         pb_import = Pixbuf.new_from_file(
-            'C:\\Users\\Odin\\Desktop\\Quest_Manager\\icons\\icon16_filesel.png')
+            '.\\icons\\icon16_filesel.png')
         pb_export = Pixbuf.new_from_file(
-            'C:\\Users\\Odin\\Desktop\\Quest_Manager\\icons\\icon16_export.png')
+            '.\\icons\\icon16_export.png')
         pb_record = Pixbuf.new_from_file(
-            'C:\\Users\\Odin\\Desktop\\Quest_Manager\\icons\\icon16_render_animation.png')
+            '.\\icons\\icon16_render_animation.png')
         pb_stop_record = Pixbuf.new_from_file(
-            'C:\\Users\\Odin\\Desktop\\Quest_Manager\\icons\\icon16_rec.png')
+            '.\\icons\\icon16_rec.png')
 
         boc = Gtk.Box()
         lb = Gtk.Label("Nuevo")
@@ -728,7 +743,8 @@ class HeaderBarWindow(Gtk.Window):
             print("Cancel clicked")
 
         dialog.destroy()
-
+        
+        
     def add_treeview_entry(self, quest):
         print('completed: {}\nnumber: {}\nname: {}\nn_hist: {}\nn_dialog: {}\nfile: {}\n'.format(quest.is_completed, quest.number, quest.name, quest.n_hist, quest.n_dialog, quest.file))
         self.store.append([quest.is_completed, quest.number, quest.name, quest.n_hist, quest.n_dialog, quest.file])
@@ -745,7 +761,7 @@ class HeaderBarWindow(Gtk.Window):
         self.grid.set_row_homogeneous(True)
 
         self.treeview = Gtk.TreeView(model=self.store)
-        self.treeview.connect('cursor-changed', self.selection_changed)
+        #self.treeview.connect('cursor-changed', self.selection_changed)
 
         for i, column_title in enumerate(
                 ["Completa", "Numero", "Nombre", "Cant. Historias", "Cant. Dialogos", "Archivo"]
@@ -762,6 +778,7 @@ class HeaderBarWindow(Gtk.Window):
             elif i == 2:
                 renderer = Gtk.CellRendererText()
                 renderer.set_property("editable", True)
+                renderer.connect("edited", self.name_edited)
                 column = Gtk.TreeViewColumn(column_title, renderer, text=i, active=self.COLUMN_FIXED)
                 column.set_min_width(50)
                 column.set_sizing(Gtk.TreeViewColumnSizing.AUTOSIZE)
@@ -776,6 +793,8 @@ class HeaderBarWindow(Gtk.Window):
                 column.set_reorderable(True)
             
             self.treeview.append_column(column)
+            
+            self.treeview.connect("row-activated", self.selected_row)
         
         for quest in quest_list:
             self.add_treeview_entry(quest)
@@ -816,6 +835,32 @@ class HeaderBarWindow(Gtk.Window):
         stack.add_titled(Gtk.Label(), 'cutscene', 'Cut-Scenes')
 
         return gride
+        
+        
+    def selected_row(self, tree_view, path, column):
+        (model, iter) = tree_view.get_selection().get_selected()
+        self.tabs.add_tab(model[iter][5].rsplit('\\', 1)[-1])
+         
+    def name_edited(self, widget, path, text):
+        if len(text) > 0 and text and not check(text):
+            text = re.sub(' ', '_', text) 
+            text = re.sub(r'[^\w]', '', text)
+    
+            qst = quest_list[int(path)]
+            
+            if qst.name != text:
+                qst.name = text
+                
+                old_file = qst.file
+                
+                qst.file = os.path.join(dir_quests, "M_{:03d}_{}-{}".format(qst.number, qst.world, text) + ".qst")
+                
+                with open(qst.file, 'w') as q:
+                    json.dump(qst.__dict__, q)
+                    
+                os.remove(old_file)
+                    
+                self.store[path][2] = text
 
 
     def language_filter_func(self, model, iter, data):
@@ -836,10 +881,6 @@ class HeaderBarWindow(Gtk.Window):
         # we update the filter, which updates in turn the view
         self.language_filter.refilter()
 
-    def selection_changed(self, treeview):
-        (model, iter) = treeview.get_selection().get_selected()
-        #self.plot_csv(model[iter][0])
-
     def is_fixed_toggled(self, cell, path_str, model):
         # get toggled iter
         iter_ = model.get_iter(path_str)
@@ -855,6 +896,10 @@ class HeaderBarWindow(Gtk.Window):
 
         with open(qst.file, 'w') as q:
             json.dump(qst.__dict__, q)
+
+## check if string contains only symbols
+def check(s):
+    return all(i in string.punctuation for i in s)
 
 
 win = HeaderBarWindow()
