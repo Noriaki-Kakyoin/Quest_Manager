@@ -2,7 +2,7 @@ import gi
 
 gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
-from gi.repository import Gtk, Gio, Gdk
+from gi.repository import Gtk, Gio, Gdk, GLib, Pango
 from gi.repository.GdkPixbuf import Pixbuf
 import re
 import pathlib
@@ -10,6 +10,9 @@ import os
 import datetime
 import json
 import string 
+from shutil import copyfile
+
+# TODO Gtk.Plug + https://github.com/paceholder/nodeeditor + pyqt5
 
 ###############################################
 # Check if /APPDATA/ROAMING/QuestManager folder has been created
@@ -17,13 +20,17 @@ homedir = os.getenv('APPDATA')
 dir_default = os.path.join(homedir, 'QuestManager\\')
 dir_tmp = os.path.join(homedir, 'QuestManager\\', 'tmp\\')
 dir_quests = os.path.join(homedir, 'QuestManager\\', 'quests\\')
+dir_quests_buffer = os.path.join(homedir, 'QuestManager\\', 'quests\\', 'buffer\\')
 pathlib.Path(dir_tmp).mkdir(parents=True, exist_ok=True) 
 pathlib.Path(dir_quests).mkdir(parents=True, exist_ok=True) 
 
 _selected_quest = ""
 quest_list = []
 tabs = []
-active_tab = ""
+active_tab = None
+
+textviews_hist = Gtk.TextView()
+textviews_hist_buffer_bytes = {}
 
 class Quest():
     def __init__(self, is_completed: bool, number: int, name: str, file: str, world: str, n_hist=0, n_dialog=0, last_modified=str(datetime.datetime.now()), h_textviews=[]):
@@ -121,6 +128,13 @@ class Tabs_Manager(Gtk.ScrolledWindow):
             btn = box.get_children()[1]
             btn.change_id(i)
             i = i + 1
+        
+        if len(tabs) > 0:
+            self.select_tab(tabs[0])
+        else:
+            global active_tab
+            active_tab = None
+            self.win.no_tabs_available()
 
     def is_tab_opened(self, title):
         global tabs
@@ -138,7 +152,6 @@ class Tabs_Manager(Gtk.ScrolledWindow):
         if not self.is_tab_opened(title):
             tab.set_size_request(-1, 30)
             evnt.add(tab)
-            print(title)
             evnt.set_css_name(title)
     
             evnt.connect('button-release-event', self.on_button_released)
@@ -154,28 +167,70 @@ class Tabs_Manager(Gtk.ScrolledWindow):
             self.box.pack_start(evnt, False, False, 1)
     
             tabs.append(evnt)
-            self.select_tab(evnt)
             self.win.show_all()
+            btn.set_visible(False)
+            
+            buffer = textviews_hist.get_buffer()
+            buffer.connect('changed', self.on_buffer_changed, title, buffer)
+            start, end = buffer.get_bounds()
+        
+            tag_format = buffer.register_deserialize_tagset(None)
+
+            file_name = os.path.join(dir_quests_buffer, os.path.splitext(title)[0])
+
+            (status, file) = GLib.file_get_contents(os.path.join(dir_quests_buffer, file_name))
+            content = buffer.deserialize(buffer, tag_format, start, file)
+
+            textviews_hist.new_with_buffer(buffer)
+            textviews_hist.set_sensitive(True)
         else:
-            self.select_tab(evnt)   
+            for tab in tabs:
+                box = tab.get_children()[0]
+                lbl = box.get_children()[0]
+                if lbl.get_text() == title:
+                    self.select_tab(tab)   
+
     
-    def select_tab(self, widget):
+    def on_buffer_changed(self, widget, title, buf):
+        file_name = os.path.join(dir_quests_buffer, os.path.splitext(title)[0])
+        tag_format = buf.register_serialize_tagset()
+        start, end = buf.get_bounds()
+        content = buf.serialize(buf, tag_format, start, end) 
+        status = GLib.file_set_contents(os.path.join(dir_quests_buffer, file_name), content)
+        print("File serialized successfully? : {}".format(status))
+
+    def select_tab(self, taberino):
         global tabs
         global active_tab
+
         for tab in tabs:
-            if tab != widget:
+            if tab != taberino:
                 tab.override_background_color(Gtk.StateFlags.NORMAL, Gdk.RGBA(0, 0, 0, .25))
-        widget.override_background_color(Gtk.StateFlags.NORMAL, Gdk.RGBA(1, 1, 1, .1))
-
-        print(type(widget))
-
-        box = widget.get_children()[0]
-        lbl = box.get_children()[0]
+                box = tab.get_children()[0]
+                lbl = box.get_children()[0]
+                btn = box.get_children()[1]
+                btn.set_visible(False)
+                btn.set_sensitive(False)
+        taberino.override_background_color(Gtk.StateFlags.NORMAL, Gdk.RGBA(1, 1, 1, .1))
        
+        box = taberino.get_children()[0]
+        lbl = box.get_children()[0]
+        btn = box.get_children()[1]
+        btn.set_visible(True)
+        btn.set_sensitive(True)
         active_tab = lbl.get_text()
+        adj = self.get_hadjustment();
+        adj.set_value(adj.get_upper());
+
+        self.win.tab_changed()
     
     def open_tab(self, name):
-        pass
+        global tabs
+        for tab in tabs:
+            box = tab.get_children()[0]
+            lbl = box.get_children()[0]
+            if lbl.get_text() == name:
+                self.select_tab(tab)
 
     def on_button_pressed(self, widget, event):
         pass
@@ -240,8 +295,6 @@ class Assistant(object):
 
         quest_file = os.path.join(homedir, 'QuestManager\\', 'quests\\', self.label_real_mission_name.get_text() + ".qst")
 
-        print('>>>>>' + selected_world)
-
         new_quest = Quest(False, len(quest_list) + 1, self.mission_name_entry.get_text(), quest_file, selected_world)
 
         with open(quest_file, 'w') as q:
@@ -249,8 +302,12 @@ class Assistant(object):
 
         quest_list.append(new_quest)
 
+        file_buffer = os.path.join(dir_quests_buffer, self.label_real_mission_name.get_text())
+        copyfile(os.path.join(dir_quests_buffer, 'default\\', 'default'), file_buffer)
+
         self.win.add_treeview_entry(new_quest)
-        self.tbm.add_tab(self.mission_name_entry.get_text())
+        self.win.tabs.add_tab(self.label_real_mission_name.get_text())
+        self.win.tabs.open_tab(self.label_real_mission_name.get_text())
 
     def on_prepare(self, assistant, page):
         current_page = assistant.get_current_page()
@@ -540,6 +597,7 @@ class HeaderBarWindow(Gtk.Window):
         self.set_default_size(720, height)
 
         self.tabs = Tabs_Manager(self)
+        self.stack = Gtk.Stack()
 
         self.theme_dark = True
 
@@ -609,6 +667,14 @@ class HeaderBarWindow(Gtk.Window):
 
         self.connect('destroy', Gtk.main_quit)
         self.show_all()
+
+    def tab_changed(self):
+        self.stack.set_visible_child_full('story', Gtk.StackTransitionType.SLIDE_UP)
+        textviews_hist.grab_focus()
+
+    def no_tabs_available(self):
+        textviews_hist.set_buffer(Gtk.TextBuffer.new(None))
+        textviews_hist.set_sensitive(False)
     
     def toggle_theme(self, widget):
         settings = Gtk.Settings.get_default()
@@ -851,22 +917,21 @@ class HeaderBarWindow(Gtk.Window):
 
         gride = Gtk.Grid()
 
-        stack = Gtk.Stack()
-        stack.set_hhomogeneous(True)
-        stack.set_transition_type(Gtk.StackTransitionType.SLIDE_UP)
+        self.stack.set_hhomogeneous(True)
+        self.stack.set_transition_type(Gtk.StackTransitionType.SLIDE_UP)
 
-        stack.set_hexpand(True)
-        stack.set_vexpand(True)
-        gride.attach(stack, 1, 0, 1, 1)
+        self.stack.set_hexpand(True)
+        self.stack.set_vexpand(True)
+        gride.attach(self.stack, 1, 0, 1, 1)
 
         stacksidebar = Gtk.StackSidebar()
-        stacksidebar.set_stack(stack)
+        stacksidebar.set_stack(self.stack)
         gride.attach(stacksidebar, 0, 0, 1, 1)
 
-        stack.add_titled(self.vpaned, 'quest', 'Lista de Quest                               ')
-        stack.add_titled(Gtk.Label(), 'story', 'Historia General')
-        stack.add_titled(Gtk.Label(), 'dialogue', 'Dialogos')
-        stack.add_titled(Gtk.Label(), 'cutscene', 'Cut-Scenes')
+        self.stack.add_titled(self.vpaned, 'quest', 'Lista de Quest                               ')
+        self.stack.add_titled(textviews_hist, 'story', 'Historia General')
+        self.stack.add_titled(Gtk.Label(), 'dialogue', 'Dialogos')
+        self.stack.add_titled(Gtk.Label(), 'cutscene', 'Cut-Scenes')
 
         return gride
         

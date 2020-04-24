@@ -4,40 +4,54 @@ gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk
 
 
-class CellRendererTextWindow(Gtk.Window):
+class MyWindow(Gtk.Window):
     def __init__(self):
-        Gtk.Window.__init__(self, title="CellRendererText Example")
+        Gtk.Window.__init__(self, title="Simple Notebook Example")
+        self.set_border_width(3)
 
-        self.set_default_size(200, 200)
+        self.notebook = Gtk.Notebook()
+        self.add(self.notebook)
+        self.notebook.set_scrollable(True)
 
-        self.liststore = Gtk.ListStore(str, str)
-        self.liststore.append(["Fedora", "https://fedoraproject.org/"])
-        self.liststore.append(["Slackware", "http://www.slackware.com/"])
-        self.liststore.append(["Sidux", "http://sidux.com/"])
+        self.page1 = Gtk.Box()
+        self.page1.set_border_width(10)
+        self.page1.add(Gtk.Label("Default Page!"))
+        self.notebook.append_page(self.page1, Gtk.Label("Plain Title"))
 
-        treeview = Gtk.TreeView(model=self.liststore)
+        self.notebook.set_tab_detachable(self.page1, True)
 
-        renderer_text = Gtk.CellRendererText()
-        column_text = Gtk.TreeViewColumn("Text", renderer_text, text=0)
-        treeview.append_column(column_text)
-
-        renderer_editabletext = Gtk.CellRendererText()
-        renderer_editabletext.set_property("editable", True)
-
-        column_editabletext = Gtk.TreeViewColumn(
-            "Editable Text", renderer_editabletext, text=1
+        self.page2 = Gtk.Box()
+        self.header = Gtk.HBox()
+        self.page2.set_border_width(10)
+        self.page2.add(Gtk.Label("A page with an image for a Title."))
+        self.header.pack_start(Gtk.Label("hello"), False, False, 0)
+        self.notebook.append_page(
+            self.page2, self.header
         )
-        treeview.append_column(column_editabletext)
 
-        renderer_editabletext.connect("edited", self.text_edited)
+        self.page3 = Gtk.Box()
+        self.page3.set_border_width(10)
+        self.page3.add(Gtk.Label("A page with an image for a Title."))
+        self.notebook.append_page(
+            self.page3, Gtk.Image.new_from_icon_name("help-about", Gtk.IconSize.MENU)
+        )
 
-        self.add(treeview)
+        self.page4 = Gtk.Box()
+        self.page4.set_border_width(10)
+        self.page4.add(Gtk.Label("A page with an image for a Title."))
+        self.notebook.append_page(
+            self.page4, Gtk.Image.new_from_icon_name("help-about", Gtk.IconSize.MENU)
+        )
 
-    def text_edited(self, widget, path, text):
-        self.liststore[path][1] = text
+        self.page5 = Gtk.Box()
+        self.page5.set_border_width(10)
+        self.page5.add(Gtk.Label("A page with an image for a Title."))
+        self.notebook.append_page(
+            self.page5, Gtk.Image.new_from_icon_name("help-about", Gtk.IconSize.MENU)
+        )
 
 
-win = CellRendererTextWindow()
+win = MyWindow()
 win.connect("destroy", Gtk.main_quit)
 win.show_all()
 Gtk.main()
