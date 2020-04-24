@@ -22,6 +22,8 @@ pathlib.Path(dir_quests).mkdir(parents=True, exist_ok=True)
 
 _selected_quest = ""
 quest_list = []
+tabs = []
+active_tab = ""
 
 class Quest():
     def __init__(self, is_completed: bool, number: int, name: str, file: str, world: str, n_hist=0, n_dialog=0, last_modified=str(datetime.datetime.now()), h_textviews=[]):
@@ -67,6 +69,10 @@ class ImageButton(Gtk.EventBox):
     def get(self):
         return self
 
+    def change_id(self, new_id: int):
+        print('{} id will change to: {}'.format(self.name, new_id))
+        self.id = new_id
+
     def update_image(self, image_widget):
         self.remove(self.get_child())
         self.add(image_widget)
@@ -78,16 +84,21 @@ class ImageButton(Gtk.EventBox):
         pass
 
     def on_button_released(self, widget, event):
-        self.tbm.remove_tab(self.name)
+        #print(self.name)
+        self.tbm.remove_tab(self.id)
 
-class Tabs_Manager(Gtk.HBox):
+
+class Tabs_Manager(Gtk.ScrolledWindow):
     def __init__(self, win):
-        Gtk.HBox.__init__(self)
-        self.override_background_color(Gtk.StateFlags.NORMAL, Gdk.RGBA(0, 0, 0, .25))
-        self.tabs = []
-        self.tabs_titles = []
+        Gtk.ScrolledWindow.__init__(self)
         self.btns = []
         self.textview = Gtk.TextView()
+
+        self.box = Gtk.HBox()
+        self.box.override_background_color(Gtk.StateFlags.NORMAL, Gdk.RGBA(0, 0, 0, .25))
+        self.add(self.box)
+
+        self.scroll = Gtk.HScrollbar()
 
         self.win = win
     
@@ -95,52 +106,73 @@ class Tabs_Manager(Gtk.HBox):
         return self
 
     def destroy_all(self):
-        for e in self.tabs:
+        for e in tabs:
             e.destroy()
     
-    def remove_tab(self, title):
-        print('tab {} will be removed'.format(title))
-        print("{}\n{}".format(self.tabs, self.tabs_titles))
-        for tab in self.tabs:
-            if tab.get_css_name() == title:
-                self.tabs.remove(tab)
-                tab.destroy()
-                
-        for tab_title in self.tabs_titles:
-            if tab_title == title:
-                self.tabs_titles.remove(title)
+    def remove_tab(self, id):
+        global tabs
+        tabs[id].destroy()
+        tabs.pop(id)
+
+        ## reset btns ids
+        i = 0
+        for tab in tabs:
+            box = tab.get_children()[0]
+            btn = box.get_children()[1]
+            btn.change_id(i)
+            i = i + 1
+
+    def is_tab_opened(self, title):
+        global tabs
+        for tab in tabs:
+            box = tab.get_children()[0]
+            lbl = box.get_children()[0]
+            if lbl.get_text() == title:
+                return True
+        return False
 
     def add_tab(self, title):
-        if title not in self.tabs_titles:
-            evnt = Gtk.EventBox()
-            tab = Gtk.HBox()
-            tab.set_size_request(-1, 40)
+        global tabs
+        evnt = Gtk.EventBox()
+        tab = Gtk.HBox()
+        if not self.is_tab_opened(title):
+            tab.set_size_request(-1, 30)
             evnt.add(tab)
+            print(title)
             evnt.set_css_name(title)
     
             evnt.connect('button-release-event', self.on_button_released)
     
             tab.override_background_color(Gtk.StateFlags.NORMAL, Gdk.RGBA(0, 0, 0, .25))
             labl = Gtk.Label(title)
-            btn = ImageButton(title, self, len(self.tabs))
+            btn = ImageButton(title, self, len(tabs))
             btn.set_css_name(title)
             self.btns.append(btn)
     
             tab.pack_start(labl, False, False, 10)
             tab.pack_start(btn.get(), False, False, 10)
-            self.pack_start(evnt, False, False, 1)
+            self.box.pack_start(evnt, False, False, 1)
     
-            self.tabs.append(evnt)
-            self.tabs_titles.append(title)
-    
+            tabs.append(evnt)
+            self.select_tab(evnt)
             self.win.show_all()
         else:
-            self.select_tab(title)   
+            self.select_tab(evnt)   
     
-    def select_tab(self, title):
-        for tab in self.tabs:
-            if tab.get_css_name() == title:
-                box = tab.get_children()[0]
+    def select_tab(self, widget):
+        global tabs
+        global active_tab
+        for tab in tabs:
+            if tab != widget:
+                tab.override_background_color(Gtk.StateFlags.NORMAL, Gdk.RGBA(0, 0, 0, .25))
+        widget.override_background_color(Gtk.StateFlags.NORMAL, Gdk.RGBA(1, 1, 1, .1))
+
+        print(type(widget))
+
+        box = widget.get_children()[0]
+        lbl = box.get_children()[0]
+       
+        active_tab = lbl.get_text()
     
     def open_tab(self, name):
         pass
@@ -150,7 +182,9 @@ class Tabs_Manager(Gtk.HBox):
         #self.update_image(self.button_pressed_image)
 
     def on_button_released(self, widget, event):
-        pass
+        box = widget.get_children()[0]
+        lbl = box.get_children()[0]
+        self.select_tab(widget)
 
 class Assistant(object):
     def __init__(self, tbm, win):
