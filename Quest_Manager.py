@@ -29,8 +29,98 @@ quest_list = []
 tabs = []
 active_tab = None
 
-textviews_hist = Gtk.TextView()
-textviews_hist_buffer_bytes = {}
+class TextBuffer(Gtk.TextBuffer):
+    def __init__(self, title):
+        Gtk.TextBuffer.__init__(self)
+        self.title = title
+        print('wenas')
+        self.connect('changed', self.on_buffer_changed)
+        self.connect_after('insert-text', self.text_inserted)
+        # A list to hold our active tags
+        self.tags_on = []
+        # Our Bold tag.
+        self.tag_bold = self.create_tag("bold", weight=Pango.Weight.BOLD)  
+
+    def get_iter_position(self):
+        return self.get_iter_at_mark(self.get_insert())
+
+    def make_bold(self):
+        ''' add "bold" to our active tags list '''
+        if 'bold' in self.tags_on:
+            del self.tags_on[self.tags_on.index('bold')]
+        else:
+            self.tags_on.append('bold')
+            
+        bounds = self.get_selection_bounds()
+        if len(bounds) != 0:
+            start, end = bounds
+            self.apply_tag(self.tag_bold, start, end)
+
+    def text_inserted(self, buffer, iter, text, length):
+        # A text was inserted in the buffer. If there are ny tags in self.tags_on,   apply them
+        if self.tags_on:
+            # This sets the iter back N characters
+            iter.backward_chars(length)
+            # And this applies tag from iter to end of buffer
+            self.apply_tag_by_name('bold', self.get_iter_position(), iter)
+            
+    def on_buffer_changed(self, widget):
+        file_name = os.path.join(dir_quests_buffer, os.path.splitext(self.title)[0])
+        print(file_name)
+        self.register_serialize_tagset ("bold")
+        tag_format = self.register_serialize_tagset()
+        start, end = self.get_bounds()
+        content = self.serialize(self, tag_format, start, end) 
+        
+        print(self.get_text(start, end, True))
+        status = GLib.file_set_contents(os.path.join(dir_quests_buffer, file_name), content)
+        print("File serialized successfully? : {}".format(status))
+    
+
+    def parse_markup_string(self, string):
+        '''
+        Parses the string and returns a MarkupProps instance
+        '''
+        #The 'value' of an attribute...for some reason the same attribute is called several different things...
+        attr_values = ('value', 'ink_rect', 'logical_rect', 'desc', 'color')
+    
+        #Get the AttributeList and text
+        attr_list, text, accel = Pango.parse_markup( string, -1, 0 )
+        attr_iter = attr_list.get_iterator()
+    
+        #Create the converter
+        props = MarkupProps()
+        props.text = text
+    
+        val = True
+        while val:
+                attrs = attr_iter.get_attrs()
+    
+                for attr in attrs:
+                        name = attr.type
+                        start = attr.start_index
+                        end = attr.end_index
+                        name = Pango.AttrType(name).value_nick
+    
+                        value = None
+                        #Figure out which 'value' attribute to use...there's only one per pango.Attribute
+                        for attr_value in attr_values:
+                                if hasattr( attr, attr_value ):
+                                        value = getattr( attr, attr_value )
+                                        break
+    
+                        #There are some irregularities...'font_desc' of the pango.Attribute
+                        #should be mapped to the 'font' property of a GtkTextTag
+                        if name == 'font_desc':
+                                name = 'font'
+                        props.add( name, value, start, end )
+    
+                val = attr_iter.next()
+    
+        return props
+    
+    def shine(self):
+        print('im here')
 
 class Quest():
     def __init__(self, is_completed: bool, number: int, name: str, file: str, world: str, n_hist=0, n_dialog=0, last_modified=str(datetime.datetime.now()), h_textviews=[]):
@@ -170,8 +260,7 @@ class Tabs_Manager(Gtk.ScrolledWindow):
             self.win.show_all()
             btn.set_visible(False)
             
-            buffer = textviews_hist.get_buffer()
-            buffer.connect('changed', self.on_buffer_changed, title, buffer)
+            buffer = TextBuffer(title)
             start, end = buffer.get_bounds()
         
             tag_format = buffer.register_deserialize_tagset(None)
@@ -180,24 +269,17 @@ class Tabs_Manager(Gtk.ScrolledWindow):
 
             (status, file) = GLib.file_get_contents(os.path.join(dir_quests_buffer, file_name))
             content = buffer.deserialize(buffer, tag_format, start, file)
+            
 
-            textviews_hist.new_with_buffer(buffer)
-            textviews_hist.set_sensitive(True)
+            self.win.change_buffer(buffer)
+            self.win.textviews_hist.set_sensitive(True)
+            
         else:
             for tab in tabs:
                 box = tab.get_children()[0]
                 lbl = box.get_children()[0]
                 if lbl.get_text() == title:
                     self.select_tab(tab)   
-
-    
-    def on_buffer_changed(self, widget, title, buf):
-        file_name = os.path.join(dir_quests_buffer, os.path.splitext(title)[0])
-        tag_format = buf.register_serialize_tagset()
-        start, end = buf.get_bounds()
-        content = buf.serialize(buf, tag_format, start, end) 
-        status = GLib.file_set_contents(os.path.join(dir_quests_buffer, file_name), content)
-        print("File serialized successfully? : {}".format(status))
 
     def select_tab(self, taberino):
         global tabs
@@ -308,6 +390,7 @@ class Assistant(object):
         self.win.add_treeview_entry(new_quest)
         self.win.tabs.add_tab(self.label_real_mission_name.get_text())
         self.win.tabs.open_tab(self.label_real_mission_name.get_text())
+        self.win.textviews_hist = Gtk.TextView.new_with_buffer(TextBuffer(self.label_real_mission_name.get_text() + ".qst"))
 
     def on_prepare(self, assistant, page):
         current_page = assistant.get_current_page()
@@ -600,6 +683,36 @@ class HeaderBarWindow(Gtk.Window):
         self.stack = Gtk.Stack()
 
         self.theme_dark = True
+        
+        self.textviews_hist = Gtk.TextView.new()
+        self.textviews_hist_buffer_bytes = {}
+        
+        self.hist_container = Gtk.VBox()
+
+        hist_toobox = Gtk.Toolbar.new()
+        
+        pb_bold = Pixbuf.new_from_file('.\\icons\\icon16_bold_white.png')
+        pb_italic = Pixbuf.new_from_file('.\\icons\\icon16_italic_white.png')
+        
+        ## add bold btn to toolbar
+        img = Gtk.Image()
+        img.set_from_pixbuf(pb_bold)
+        bar_item = Gtk.ToolButton.new(img, "Bold")
+        bar_item.set_tooltip_text("Bold Text")
+        bar_item.connect('clicked', self.set_bold_text)
+        hist_toobox.insert(bar_item, -1)
+        
+        ## add italic btn to toolbar
+        img = Gtk.Image()
+        img.set_from_pixbuf(pb_italic)
+        bar_item = Gtk.ToolButton.new(img, "Italic")
+        bar_item.set_tooltip_text("Italic Text")
+        #bar_item.connect('clicked', self.new_file_click)
+        hist_toobox.insert(bar_item, -1)
+        
+        self.hist_container.pack_start(hist_toobox, False, True, 0)
+        self.hist_container.pack_start(self.textviews_hist, True, True, 0)
+
 
         ##############################################
         # Scan quest folder
@@ -667,14 +780,22 @@ class HeaderBarWindow(Gtk.Window):
 
         self.connect('destroy', Gtk.main_quit)
         self.show_all()
+        
+    def change_buffer(self, buffer):
+        self.textviews_hist.set_buffer(buffer)
+
+    def set_bold_text(self, widget):
+        buffer = self.textviews_hist.get_buffer()
+        buffer.shine()
+        buffer.make_bold()
 
     def tab_changed(self):
         self.stack.set_visible_child_full('story', Gtk.StackTransitionType.SLIDE_UP)
-        textviews_hist.grab_focus()
+        self.textviews_hist.grab_focus()
 
     def no_tabs_available(self):
-        textviews_hist.set_buffer(Gtk.TextBuffer.new(None))
-        textviews_hist.set_sensitive(False)
+        self.textviews_hist.set_buffer(Gtk.TextBuffer.new(None))
+        self.textviews_hist.set_sensitive(False)
     
     def toggle_theme(self, widget):
         settings = Gtk.Settings.get_default()
@@ -929,7 +1050,7 @@ class HeaderBarWindow(Gtk.Window):
         gride.attach(stacksidebar, 0, 0, 1, 1)
 
         self.stack.add_titled(self.vpaned, 'quest', 'Lista de Quest                               ')
-        self.stack.add_titled(textviews_hist, 'story', 'Historia General')
+        self.stack.add_titled(self.hist_container, 'story', 'Historia General')
         self.stack.add_titled(Gtk.Label(), 'dialogue', 'Dialogos')
         self.stack.add_titled(Gtk.Label(), 'cutscene', 'Cut-Scenes')
 
